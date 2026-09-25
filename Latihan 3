@@ -1,0 +1,181 @@
+#include <Arduino.h>
+
+hw_timer_t *timer = NULL;
+
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
+volatile bool waktunyaCuplik = false;
+volatile unsigned long tISR = 0;
+
+unsigned long tSebelumnya = 0;
+
+unsigned long selang = 0;
+unsigned long minimum = 0xFFFFFFFFUL;
+unsigned long maksimum = 0;
+
+unsigned long cacahCuplik = 0;
+
+
+// =====================================================
+// INTERRUPT TIMER
+// =====================================================
+
+void IRAM_ATTR isrTimer()
+{
+    portENTER_CRITICAL_ISR(&mux);
+
+    // Ambil waktu saat interrupt terjadi
+    tISR = micros();
+
+    // Tandai ada pencuplikan
+    waktunyaCuplik = true;
+
+    portEXIT_CRITICAL_ISR(&mux);
+}
+
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup()
+{
+    Serial.begin(115200);
+
+    delay(2000);
+
+    Serial.println();
+    Serial.println("======================================");
+    Serial.println("PENGUKURAN SELANG ANTAR CUPLIK");
+    Serial.println("Timer = 10 ms");
+    Serial.println("======================================");
+
+    // =================================================
+    // TIMER ESP32 CORE 2.x
+    // =================================================
+
+    // Timer 0
+    // 80 MHz / 80 = 1 MHz
+    // 1 tick = 1 us
+    timer = timerBegin(0, 80, true);
+
+    if (timer == NULL)
+    {
+        Serial.println("ERROR: Timer gagal dibuat!");
+        while (1)
+        {
+            delay(1000);
+        }
+    }
+
+    timerAttachInterrupt(timer, &isrTimer, true);
+
+    // 10.000 us = 10 ms
+    timerAlarmWrite(timer, 10000, true);
+
+    // Aktifkan timer
+    timerAlarmEnable(timer);
+
+    Serial.println("Timer aktif.");
+    Serial.println("Periode target = 10000 us");
+    Serial.println("Menunggu data...");
+    Serial.println();
+}
+
+
+// =====================================================
+// LOOP
+// =====================================================
+
+void loop()
+{
+    bool perluOlah = false;
+    unsigned long t = 0;
+
+    // Ambil data dari ISR secara aman
+    portENTER_CRITICAL(&mux);
+
+    if (waktunyaCuplik)
+    {
+        waktunyaCuplik = false;
+
+        t = tISR;
+
+        perluOlah = true;
+    }
+
+    portEXIT_CRITICAL(&mux);
+
+
+    // =================================================
+    // HITUNG SELANG ANTAR CUPLIK
+    // =================================================
+
+    if (perluOlah)
+    {
+        // Lewati pencuplikan pertama
+        // karena belum mempunyai waktu pembanding
+        if (tSebelumnya != 0)
+        {
+            selang = t - tSebelumnya;
+
+            // Cari minimum
+            if (selang < minimum)
+            {
+                minimum = selang;
+            }
+
+            // Cari maksimum
+            if (selang > maksimum)
+            {
+                maksimum = selang;
+            }
+
+            cacahCuplik++;
+        }
+
+        // Simpan waktu untuk pencuplikan berikutnya
+        tSebelumnya = t;
+    }
+
+
+    // =================================================
+    // TAMPILKAN HASIL
+    // =================================================
+
+    if (cacahCuplik >= 1000)
+    {
+        unsigned long jitter = maksimum - minimum;
+
+        Serial.println("======================================");
+        Serial.println("HASIL PENGUKURAN");
+        Serial.println("======================================");
+
+        Serial.print("Timer target       : ");
+        Serial.println("10000 us (10 ms)");
+
+        Serial.print("Jumlah cuplikan    : ");
+        Serial.println(cacahCuplik);
+
+        Serial.print("Selang minimum     : ");
+        Serial.print(minimum);
+        Serial.println(" us");
+
+        Serial.print("Selang maksimum    : ");
+        Serial.print(maksimum);
+        Serial.println(" us");
+
+        Serial.print("Jitter             : ");
+        Serial.print(jitter);
+        Serial.println(" us");
+
+        Serial.println("======================================");
+        Serial.println();
+
+
+        // Reset statistik
+        minimum = 0xFFFFFFFFUL;
+        maksimum = 0;
+        cacahCuplik = 0;
+    }
+}
