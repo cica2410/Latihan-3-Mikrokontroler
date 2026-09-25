@@ -1,0 +1,24 @@
+#include <Arduino.h>
+ 
+const int TOMBOL = 15;
+ 
+unsigned long cacahPolling = 0;
+bool tombolSebelumnya = HIGH;
+ 
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  pinMode(TOMBOL, INPUT_PULLUP);
+}
+ 
+void loop() {
+  bool sekarang = digitalRead(TOMBOL);
+  if (tombolSebelumnya == HIGH && sekarang == LOW) {
+    cacahPolling++;
+    Serial.print("polling mencacah: ");
+    Serial.println(cacahPolling);
+  }
+  tombolSebelumnya = sekarang;
+ 
+  delay(300);            // mewakili pekerjaan lain yang menahan loop
+}
