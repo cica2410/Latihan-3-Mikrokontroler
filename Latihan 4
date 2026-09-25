@@ -1,0 +1,128 @@
+#include <Arduino.h>
+
+const int PIN_SUMBER = 16;          // keluaran PWM
+const int PIN_CACAH = 17;           // masukan pencacah
+
+const int FREKUENSI_SETEL =  0;    // Hz
+const int RESOLUSI_BIT = 8;
+
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
+volatile unsigned long cacah = 0;
+
+unsigned long tGerbang = 0;
+unsigned long putaran = 0;
+
+
+// =====================================================
+// INTERRUPT PENCACAH
+// =====================================================
+
+void IRAM_ATTR isrCacah()
+{
+    portENTER_CRITICAL_ISR(&mux);
+
+    cacah++;
+
+    portEXIT_CRITICAL_ISR(&mux);
+}
+
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup()
+{
+    Serial.begin(115200);
+
+    delay(1000);
+
+    // =================================================
+    // ESP32 ARDUINO CORE 2.x
+    // =================================================
+
+    // Channel PWM = 0
+    // Frekuensi = FREKUENSI_SETEL
+    // Resolusi = 8 bit
+    ledcSetup(0, FREKUENSI_SETEL, RESOLUSI_BIT);
+
+    // PWM dikeluarkan melalui GPIO 16
+    ledcAttachPin(PIN_SUMBER, 0);
+
+    // Duty cycle = 128
+    // sekitar 50%
+    ledcWrite(0, 128);
+
+
+    // =================================================
+    // PIN PENCACAH
+    // =================================================
+
+    pinMode(PIN_CACAH, INPUT);
+
+    // Hitung setiap tepi naik
+    attachInterrupt(
+        digitalPinToInterrupt(PIN_CACAH),
+        isrCacah,
+        RISING
+    );
+
+
+    // Mulai gerbang waktu 1 detik
+    tGerbang = millis();
+}
+
+
+// =====================================================
+// LOOP
+// =====================================================
+
+void loop()
+{
+    // Hitung jumlah putaran loop
+    putaran++;
+
+
+    // =================================================
+    // GERBANG PENGUKURAN = 1 DETIK
+    // =================================================
+
+    if (millis() - tGerbang >= 1000)
+    {
+        unsigned long N;
+
+
+        // Ambil hasil pencacahan dengan aman
+        portENTER_CRITICAL(&mux);
+
+        N = cacah;
+
+        // Reset pencacah
+        cacah = 0;
+
+        portEXIT_CRITICAL(&mux);
+
+
+        // Geser waktu gerbang 1 detik
+        tGerbang += 1000;
+
+
+        // =================================================
+        // TAMPILKAN HASIL
+        // =================================================
+
+        Serial.print("setel ");
+        Serial.print(FREKUENSI_SETEL);
+
+        Serial.print(" Hz, tercacah ");
+        Serial.print(N);
+
+        Serial.print(" Hz, putaran loop ");
+        Serial.println(putaran);
+
+
+        // Reset jumlah putaran loop
+        putaran = 0;
+    }
+}
