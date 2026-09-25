@@ -1,0 +1,50 @@
+#include <Arduino.h>
+
+const int LED_MERAH = 4;
+const int TOMBOL = 15;
+
+volatile unsigned long cacahISR = 0;
+volatile unsigned long tTekanTerakhir = 0;
+
+const unsigned long ABAI_US = 50000; // 50 ms
+
+bool nyala = false;
+
+void IRAM_ATTR isrTombol() {
+  unsigned long sekarang = micros();
+
+  if (sekarang - tTekanTerakhir >= ABAI_US) {
+    cacahISR++;
+    tTekanTerakhir = sekarang;
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  pinMode(LED_MERAH, OUTPUT);
+  pinMode(TOMBOL, INPUT_PULLUP);
+
+  attachInterrupt(
+    digitalPinToInterrupt(TOMBOL),
+    isrTombol,
+    FALLING
+  );
+}
+
+void loop() {
+  static unsigned long cacahSebelumnya = 0;
+
+  if (cacahISR != cacahSebelumnya) {
+    cacahSebelumnya = cacahISR;
+
+    nyala = !nyala;
+    digitalWrite(LED_MERAH, nyala);
+
+    Serial.print("interupsi mencacah: ");
+    Serial.println(cacahISR);
+  }
+
+  delay(10);
+}
